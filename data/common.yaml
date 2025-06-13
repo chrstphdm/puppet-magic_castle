@@ -337,3 +337,12 @@ profile::gpu::install::passthrough::packages:
   - nvidia-xconfig
   - nvidia-persistenced
   - nvidia-driver-cuda
+
+magic_castle::site::tags:
+  nextflow:
+    - profile::nextflow
+  apptainer:
+  - profile::apptainer
+  s3fs:
+  - profile::s3fs
+    
