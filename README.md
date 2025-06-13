@@ -9,53 +9,119 @@ classes to include is define. This mechanism is explained in section
 
 The parameters of the classes can be customized by defined values in the hieradata.
 The `profile::` sections list the available classes, their role and their parameters.
-- [`profile::accounts`](#profileaccounts)
-- [`profile::base`](#profilebase)
-- [`profile::base::azure`](#profilebaseazure)
-- [`profile::base::etc_hosts`](#profilebaseetc_hosts)
-- [`profile::base::powertools`](#profilebasepowertools)
-- [`profile::ceph::client`](#profilecephclient)
-- [`profile::consul`](#profileconsul)
-- [`profile::consul::puppet_watch`](#profileconsulpuppet_watch)
-- [`profile::cvmfs::client`](#profilecvmfsclient)
-- [`profile::cvmfs::local_user`](#profilecvmfslocal_user)
-- [`profile::cvmfs::alien_cache`](#profilecvmfsalien_cache)
-- [`profile::efa`](#profileefa)
-- [`profile::fail2ban`](#profilefail2ban)
-- [`profile::freeipa`](#profilefreeipa)
-- [`profile::freeipa::base`](#profilefreeipabase)
-- [`profile::freeipa::client`](#profilefreeipaclient)
-- [`profile::freeipa::server`](#profilefreeipaserver)
-- [`profile::freeipa::mokey`](#profilefreeipamokey)
-- [`profile::gpu`](#profilegpu)
-- [`profile::jupyterhub::hub`](#profilejupyterhubhub)
-- [`profile::jupyterhub::node`](#profilejupyterhubnode)
-- [`profile::metrics::node_exporter`](#profilemetricsnode_exporter)
-- [`profile::metrics::slurm_job_exporter`](#profilemetricsslurm_job_exporter)
-- [`profile::metrics::slurm_exporter`](#profilemetricsslurm_exporter)
-- [`profile::nfs`](#profilenfs)
-- [`profile::nfs::client`](#profilenfsclient)
-- [`profile::nfs::server`](#profilenfsserver)
-- [`profile::reverse_proxy`](#profilereverse_proxy)
-- [`profile::rsyslog::base`](#profilersyslogbase)
-- [`profile::rsyslog::client`](#profilersyslogclient)
-- [`profile::rsyslog::server`](#profilersyslogserver)
-- [`profile::vector`](#profilervector)
-- [`profile::slurm::base`](#profileslurmbase)
-- [`profile::slurm::node`](#profileslurmnode)
-- [`profile::slurm::accounting`](#profileslurmaccounting)
-- [`profile::slurm::controller`](#profileslurmcontroller)
-- [`profile::slurm::node`](#profileslurmnode)
-- [`profile::software_stack`](#profilesoftware_stack)
-- [`profile::squid::server`](#profilesquidserver)
-- [`profile::sssd::client`](#profilesssdclient)
-- [`profile::ssh::base`](#profilesshbase)
-- [`profile::ssh::known_hosts`](#profilesshknown_hosts)
-- [`profile::ssh::hostbased_auth::client`](#profilesshhostbased_authclient)
-- [`profile::ssh::hostbased_auth::server`](#profilesshhostbased_authserver)
-- [`profile::users::ldap`](#profileusersldap)
-- [`profile::users::local`](#profileuserslocal)
-- [`profile::volumes`](#profilevolumes)
+
+- [Puppet Magic Castle](#puppet-magic-castle)
+  - [`magic_castle::site`](#magic_castlesite)
+    - [parameters](#parameters)
+  - [`profile::accounts`](#profileaccounts)
+    - [parameters](#parameters-1)
+    - [optional dependencies](#optional-dependencies)
+  - [`profile::base`](#profilebase)
+    - [parameters](#parameters-2)
+    - [dependencies](#dependencies)
+  - [`profile::base::azure`](#profilebaseazure)
+  - [`profile::base::etc_hosts`](#profilebaseetc_hosts)
+  - [`profile::base::powertools`](#profilebasepowertools)
+  - [`profile::ceph::client`](#profilecephclient)
+    - [parameters](#parameters-3)
+  - [profile::ceph::client::install](#profilecephclientinstall)
+  - [`profile::consul`](#profileconsul)
+    - [parameters](#parameters-4)
+    - [dependencies](#dependencies-1)
+  - [`profile::consul::puppet_watch`](#profileconsulpuppet_watch)
+    - [dependencies](#dependencies-2)
+  - [`profile::cvmfs::client`](#profilecvmfsclient)
+    - [parameters](#parameters-5)
+    - [dependencies](#dependencies-3)
+  - [`profile::cvmfs::local_user`](#profilecvmfslocal_user)
+    - [parameters](#parameters-6)
+  - [`profile::cvmfs::alien_cache`](#profilecvmfsalien_cache)
+    - [parameters](#parameters-7)
+  - [`profile::efa`](#profileefa)
+    - [parameters](#parameters-8)
+  - [`profile::fail2ban`](#profilefail2ban)
+    - [parameters](#parameters-9)
+    - [dependencies](#dependencies-4)
+  - [`profile::freeipa`](#profilefreeipa)
+    - [dependencies](#dependencies-5)
+  - [`profile::freeipa::base`](#profilefreeipabase)
+    - [parameters](#parameters-10)
+  - [`profile::freeipa::client`](#profilefreeipaclient)
+    - [parameters](#parameters-11)
+  - [`profile::freeipa::server`](#profilefreeipaserver)
+    - [parameters](#parameters-12)
+  - [`profile::freeipa::mokey`](#profilefreeipamokey)
+    - [parameters](#parameters-13)
+  - [`profile::gpu`](#profilegpu)
+    - [parameters](#parameters-14)
+  - [`profile::jupyterhub::hub`](#profilejupyterhubhub)
+    - [parameters](#parameters-15)
+    - [dependency](#dependency)
+  - [`profile::jupyterhub::node`](#profilejupyterhubnode)
+    - [dependency](#dependency-1)
+  - [`profile::metrics::node_exporter`](#profilemetricsnode_exporter)
+    - [dependencies](#dependencies-6)
+  - [`profile::metrics::slurm_job_exporter`](#profilemetricsslurm_job_exporter)
+    - [parameter](#parameter)
+    - [dependency](#dependency-2)
+  - [`profile::metrics::slurm_exporter`](#profilemetricsslurm_exporter)
+  - [`profile::nfs`](#profilenfs)
+  - [`profile::nfs::client`](#profilenfsclient)
+    - [parameters](#parameters-16)
+    - [dependency](#dependency-3)
+  - [`profile::nfs::server`](#profilenfsserver)
+    - [parameters](#parameters-17)
+    - [dependency](#dependency-4)
+  - [`profile::reverse_proxy`](#profilereverse_proxy)
+    - [parameters](#parameters-18)
+  - [`profile::rsyslog::base`](#profilersyslogbase)
+  - [`profile::rsyslog::client`](#profilersyslogclient)
+    - [dependencies](#dependencies-7)
+  - [`profile::rsyslog::server`](#profilersyslogserver)
+    - [dependencies](#dependencies-8)
+  - [`profile::vector`](#profilevector)
+    - [parameters](#parameters-19)
+  - [`profile::slurm::base`](#profileslurmbase)
+    - [parameters](#parameters-20)
+    - [dependencies](#dependencies-9)
+  - [`profile::slurm::node`](#profileslurmnode)
+    - [parameters](#parameters-21)
+  - [`profile::slurm::accounting`](#profileslurmaccounting)
+    - [parameters](#parameters-22)
+    - [dependencies](#dependencies-10)
+  - [`profile::slurm::controller`](#profileslurmcontroller)
+    - [parameters](#parameters-23)
+    - [dependencies](#dependencies-11)
+  - [`profile::slurm::node`](#profileslurmnode-1)
+    - [parameters](#parameters-24)
+    - [dependency](#dependency-5)
+  - [`profile::software_stack`](#profilesoftware_stack)
+    - [`computecanada` software stack](#computecanada-software-stack)
+    - [`eessi` software stack](#eessi-software-stack)
+    - [dependencies](#dependencies-12)
+  - [`profile::squid::server`](#profilesquidserver)
+    - [parameters](#parameters-25)
+    - [dependencies](#dependencies-13)
+  - [`profile::sssd::client`](#profilesssdclient)
+    - [parameters](#parameters-26)
+  - [`profile::ssh::base`](#profilesshbase)
+  - [`profile::ssh::known_hosts`](#profilesshknown_hosts)
+  - [`profile::ssh::hostbased_auth::client`](#profilesshhostbased_authclient)
+  - [`profile::ssh::hostbased_auth::server`](#profilesshhostbased_authserver)
+    - [parameter](#parameter-1)
+    - [dependency](#dependency-6)
+  - [`profile::users::ldap`](#profileusersldap)
+    - [parameters](#parameters-27)
+  - [`profile::users::local`](#profileuserslocal)
+    - [parameters](#parameters-28)
+  - [`profile::volumes`](#profilevolumes)
+    - [parameters](#parameters-29)
+  - [`profile::nextflow`](#profilenextflow)
+    - [parameters](#parameters-30)
+  - [`profile::apptainer`](#profileapptainer)
+    - [parameters](#parameters-31)
+  - [`profile::s3fs`](#profiles3fs)
+    - [parameters](#parameters-32)
 
 For classes with parameters, a folded **default values** subsection provides the default
 value of each parameter as it would be defined in hieradata. For some parameters, the value is
@@ -1507,5 +1573,84 @@ profile::volumes::devices:
       #"enable_resize": false,
       #"filesystem": "xfs",
       #"quota": nil
+```
+</details>
+
+---
+
+## `profile::nextflow`
+
+This class installs Nextflow and its required Java environment.
+
+### parameters
+
+| Variable              | Description                             | Type   |
+|----------------------|-----------------------------------------|--------|
+| `version`            | Nextflow version to install             | String |
+| `install_dir`        | Directory where Nextflow will be placed | String |
+| `java_package_name`  | Java package to install (if required)   | String |
+
+<details>
+<summary>default values</summary>
+
+```yaml
+profile::nextflow::version: '25.04.3'
+profile::nextflow::install_dir: '/usr/local/bin'
+profile::nextflow::java_package_name: 'java-17-openjdk-headless'
+```
+</details>
+
+---
+
+## `profile::apptainer`
+
+This class installs Apptainer from GitHub release RPMs. Supports optional SUID installation.
+
+### parameters
+
+| Variable         | Description                                          | Type    |
+|------------------|------------------------------------------------------|---------|
+| `version`        | Apptainer version to install                         | String  |
+| `install_suid`   | Whether to install the additional suid binary RPM    | Boolean |
+
+<details>
+<summary>default values</summary>
+
+```yaml
+profile::apptainer::version: '1.4.1'
+profile::apptainer::install_suid: false
+```
+</details>
+
+---
+
+## `profile::s3fs`
+
+This class installs and configures s3fs mounts for object storage.
+
+### parameters
+
+| Variable | Description                                                                 | Type |
+|----------|-----------------------------------------------------------------------------|------|
+| `mounts` | Map of mount definitions (bucket, region, mountpoint, keys) keyed by name. | Hash |
+
+Each entry must contain:
+- `bucket`: the S3 container name
+- `region`: OVH S3 region (e.g. `gra`)
+- `mountpoint`: absolute path to mount
+- `access_key`: encrypted PKCS7 string
+- `secret_key`: encrypted PKCS7 string
+
+<details>
+<summary>example</summary>
+
+```yaml
+profile::s3fs::mounts:
+  mydata:
+    bucket: "my-container"
+    region: "gra"
+    mountpoint: "/mnt/mydata"
+    access_key: "ENC[PKCS7,...]"
+    secret_key: "ENC[PKCS7,...]"
 ```
 </details>
