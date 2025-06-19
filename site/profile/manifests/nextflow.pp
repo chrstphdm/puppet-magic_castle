@@ -26,7 +26,7 @@ class profile::nextflow (
 
   $download_url = $version ? {
     'latest' => 'https://get.nextflow.io',
-    default  => "https://github.com/nextflow-io/nextflow/releases/download/v${version}/nextflow-${version}-dist/nextflow",
+    default  => "https://github.com/nextflow-io/nextflow/releases/download/v${version}/nextflow-${version}-dist",
   }
     # Ensure wget is installed for downloading Nextflow
     package { 'wget':
