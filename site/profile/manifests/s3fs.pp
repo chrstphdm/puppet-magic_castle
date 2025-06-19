@@ -50,7 +50,7 @@ class profile::s3fs (
 
     # Mount the S3 bucket using S3FS
     exec { "mount_s3fs_${name}":
-      command => "s3fs ${bucket} ${mountpoint} -o passwd_file=${credfile} -o url=https://${region}.s3.cloud.ovh.net -o use_path_request_style",
+      command => "s3fs ${bucket} ${mountpoint} -o passwd_file=${credfile} -o url=https://s3.${region}.io.cloud.ovh.net -o use_path_request_style -o allow_other -o umask=0022",
       path    => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
       unless  => "mount | grep -q '${mountpoint}'", # Prevent remounting if already mounted
       require => [ File[$credfile], File[$mountpoint], Package['s3fs-fuse'] ], # Ensure dependencies are met
