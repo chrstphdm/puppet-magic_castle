@@ -28,10 +28,8 @@ class profile::nextflow (
     'latest' => 'https://get.nextflow.io',
     default  => "https://github.com/nextflow-io/nextflow/releases/download/v${version}/nextflow-${version}-dist",
   }
-    # Ensure wget is installed for downloading Nextflow
-    package { 'wget':
-        ensure => installed,
-    }
+  # Ensure wget is installed for downloading Nextflow
+  ensure_packages(['wget'])
 
   # Download the Nextflow executable
   exec { "download_nextflow_${version}":

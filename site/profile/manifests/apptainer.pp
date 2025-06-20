@@ -16,9 +16,7 @@ class profile::apptainer (
   $rpm_suid_path = "/tmp/${rpm_suid}"
 
   # Ensure wget is installed for downloading RPMs
-  package { 'wget':
-    ensure => installed,
-  }
+  ensure_packages(['wget'])
 
   # Download the main Apptainer RPM
   exec { "download_apptainer_rpm":
