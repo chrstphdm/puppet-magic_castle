@@ -68,35 +68,14 @@ define profile::volumes::volume (
   $dev_mapper_id = "/dev/mapper/${volume_tag}--${volume_name}_vg-${volume_tag}--${volume_name}"
 
   if $is_existing_volume {
-    # For existing volumes, detect filesystem type automatically
+    # For existing volumes, NEVER format - let mount detect filesystem automatically
     if $device != undef {
-      # Detect the actual filesystem type
-      exec { "detect-fs-${volume_name}":
-        command => "blkid -s TYPE -o value ${device} > /tmp/puppet-${volume_name}-fstype || echo 'unknown' > /tmp/puppet-${volume_name}-fstype",
-        creates => "/tmp/puppet-${volume_name}-fstype",
-        path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-      }
-
-      $detected_fs = file("/tmp/puppet-${volume_name}-fstype", '/dev/null')
-      $actual_filesystem = $detected_fs ? {
-        ''        => $filesystem,
-        'unknown' => $filesystem,
-        default   => strip($detected_fs)
-      }
-
       mount { "/mnt/${volume_tag}/${volume_name}":
         ensure  => mounted,
         device  => $device,
-        fstype  => $actual_filesystem,
-        options => $actual_filesystem ? {
-          'xfs'   => 'defaults,usrquota',
-          'ext4'  => 'defaults',
-          default => 'defaults'
-        },
-        require => [
-          File["/mnt/${volume_tag}/${volume_name}"],
-          Exec["detect-fs-${volume_name}"]
-        ],
+        fstype  => 'auto',  # Let mount auto-detect the filesystem
+        options => 'defaults',
+        require => File["/mnt/${volume_tag}/${volume_name}"],
       }
       
       $mount_resource = Mount["/mnt/${volume_tag}/${volume_name}"]
@@ -110,7 +89,6 @@ define profile::volumes::volume (
       $mount_resource = undef
     }
   } else {
-    # For new volumes, use LVM as before
     exec { "vgchange-${volume_name}_vg":
       command => "vgchange -ay ${volume_name}_vg",
       onlyif  => ["test ! -d /dev/${volume_name}_vg", "vgscan -t | grep -q '${volume_name}_vg'"],
@@ -231,6 +209,20 @@ define profile::volumes::volume (
   if $quota and $filesystem == 'xfs' and $mount_resource != undef {
     ensure_resource('file', '/etc/xfs_quota', { 'ensure' => 'directory' })
     file { "/etc/xfs_quota/${volume_tag}-${volume_name}":
+      ensure  => 'file',
+      content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
+      require => File['/etc/xfs_quota'],
+    }
+
+    exec { "apply-quota-${volume_name}":
+      command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
+      require     => Mount["/mnt/${volume_tag}/${volume_name}"],
+      path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+      refreshonly => true,
+      subscribe   => [File["/etc/xfs_quota/${volume_tag}-${volume_name}"]],
+    }
+  }
+}
       ensure  => 'file',
       content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
       require => File['/etc/xfs_quota'],
