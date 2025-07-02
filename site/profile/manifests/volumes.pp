@@ -43,7 +43,6 @@ define profile::volumes::volume (
   String[1] $seltype = 'home_root_t',
   Boolean $bind_mount = true,
   Boolean $enable_resize = false,
-  Boolean $preformatted = false,
   Enum['xfs', 'ext4'] $filesystem = 'xfs',
   Optional[String[1]] $bind_target = undef,
   Optional[String[1]] $type = undef,
@@ -51,14 +50,11 @@ define profile::volumes::volume (
   Optional[String[1]] $mkfs_options = undef,
   Optional[String[1]] $volume_id = undef,
 ) {
-  # Automatically determine if volume is preformatted based on volume_id presence
-  $is_preformatted = $volume_id ? {
-    undef   => $preformatted,
-    default => true
-  }
-
   $regex = Regexp(regsubst($glob, /[?*]/, { '?' => '.', '*' => '.*' }))
   $bind_target_ = pick($bind_target, "/${volume_name}")
+  
+  # Determine if this is an existing volume based on volume_id presence
+  $is_existing_volume = $volume_id != undef
 
   file { "/mnt/${volume_tag}/${volume_name}":
     ensure  => 'directory',
@@ -71,7 +67,32 @@ define profile::volumes::volume (
   $device = (values($::facts['/dev/disk'].filter |$k, $v| { $k =~ $regex }).unique)[0]
   $dev_mapper_id = "/dev/mapper/${volume_tag}--${volume_name}_vg-${volume_tag}--${volume_name}"
 
-  unless $is_preformatted {
+  if $is_existing_volume {
+    # For existing volumes, mount directly without LVM processing
+    if $device != undef {
+      mount { "/mnt/${volume_tag}/${volume_name}":
+        ensure  => mounted,
+        device  => $device,
+        fstype  => $filesystem,
+        options => $filesystem ? {
+          'xfs'  => 'defaults,usrquota',
+          default => 'defaults'
+        },
+        require => File["/mnt/${volume_tag}/${volume_name}"],
+      }
+      
+      $mount_resource = Mount["/mnt/${volume_tag}/${volume_name}"]
+    } else {
+      notify { "error_${volume_name}":
+        message => @("EOT")
+          WARNING: Could not find device ${glob} associated with ${volume_tag}-${volume_name}.
+          This will cause errors with resources related to ${volume_tag}-${volume_name}.
+          | EOT
+      }
+      $mount_resource = undef
+    }
+  } else {
+    # For new volumes, use LVM as before
     exec { "vgchange-${name}_vg":
       command => "vgchange -ay ${name}_vg",
       onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
@@ -114,40 +135,29 @@ define profile::volumes::volume (
       mountpath_require => true,
       options           => $options,
     }
-  } else {
-    mount { "/mnt/${volume_tag}/${volume_name}":
-      ensure  => mounted,
-      device  => $dev_mapper_id,
-      fstype  => $filesystem,
-      options => $filesystem ? {
-        'xfs'  => 'defaults,usrquota',
-        default => 'defaults'
-      },
-      require => File["/mnt/${volume_tag}/${volume_name}"],
+    
+    $mount_resource = Lvm::Logical_volume[$name]
+  }
+
+  # Common ownership and permissions management
+  if $mount_resource != undef {
+    exec { "chown ${owner}:${group} /mnt/${volume_tag}/${volume_name}":
+      onlyif      => "test \"$(stat -c%U:%G /mnt/${volume_tag}/${volume_name})\" != \"${owner}:${group}\"",
+      refreshonly => true,
+      subscribe   => $mount_resource,
+      path        => ['/bin'],
+    }
+
+    exec { "chmod ${mode} /mnt/${volume_tag}/${volume_name}":
+      onlyif      => "test \"$(stat -c0%a /mnt/${volume_tag}/${volume_name})\" != \"${mode}\"",
+      refreshonly => true,
+      subscribe   => $mount_resource,
+      path        => ['/bin'],
     }
   }
 
-  exec { "chown ${owner}:${group} /mnt/${volume_tag}/${volume_name}":
-    onlyif      => "test \"$(stat -c%U:%G /mnt/${volume_tag}/${volume_name})\" != \"${owner}:${group}\"",
-    refreshonly => true,
-    subscribe   => $is_preformatted ? {
-      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
-      default => Lvm::Logical_volume[$name]
-    },
-    path        => ['/bin'],
-  }
-
-  exec { "chmod ${mode} /mnt/${volume_tag}/${volume_name}":
-    onlyif      => "test \"$(stat -c0%a /mnt/${volume_tag}/${volume_name})\" != \"${mode}\"",
-    refreshonly => true,
-    subscribe   => $is_preformatted ? {
-      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
-      default => Lvm::Logical_volume[$name]
-    },
-    path        => ['/bin'],
-  }
-
-  if $enable_resize and !$is_preformatted {
+  # Resize only applies to LVM volumes
+  if $enable_resize and !$is_existing_volume {
     $logical_volume_size_cmd = "pvs --noheadings -o pv_size ${device} | sed -nr 's/^.*[ <]([0-9]+)\\..*g$/\\1/p'"
     $physical_volume_size_cmd = "pvs --noheadings -o dev_size ${device} | sed -nr 's/^ *([0-9]+)\\..*g/\\1/p'"
     exec { "pvresize ${device}":
@@ -164,19 +174,20 @@ define profile::volumes::volume (
     }
   }
 
-  selinux::fcontext::equivalence { "/mnt/${volume_tag}/${volume_name}":
-    ensure  => 'present',
-    target  => '/home',
-    require => $is_preformatted ? {
-      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
-      default => Mount["/mnt/${volume_tag}/${volume_name}"]
-    },
-    notify  => Selinux::Exec_restorecon["/mnt/${volume_tag}/${volume_name}"],
+  # SELinux configuration
+  if $mount_resource != undef {
+    selinux::fcontext::equivalence { "/mnt/${volume_tag}/${volume_name}":
+      ensure  => 'present',
+      target  => '/home',
+      require => $mount_resource,
+      notify  => Selinux::Exec_restorecon["/mnt/${volume_tag}/${volume_name}"],
+    }
   }
 
   selinux::exec_restorecon { "/mnt/${volume_tag}/${volume_name}": }
 
-  if $bind_mount {
+  # Bind mount configuration
+  if $bind_mount and $mount_resource != undef {
     ensure_resource('file', $bind_target_, { 'ensure' => 'directory', 'seltype' => $seltype })
     mount { $bind_target_:
       ensure  => mounted,
@@ -185,24 +196,22 @@ define profile::volumes::volume (
       options => 'rw,bind',
       require => [
         File[$bind_target_],
-        $is_preformatted ? {
-          true    => Mount["/mnt/${volume_tag}/${volume_name}"],
-          default => Lvm::Logical_volume[$name]
-        },
+        $mount_resource,
       ],
     }
   } elsif (
     $facts['mountpoints'][$bind_target_] != undef and
-    $facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id
+    ($facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id or
+     $facts['mountpoints'][$bind_target_]['device'] == $device)
   ) {
     mount { $bind_target_:
       ensure  => absent,
     }
   }
 
-  if $quota and $filesystem == 'xfs' {
+  # Quota configuration (only for XFS)
+  if $quota and $filesystem == 'xfs' and $mount_resource != undef {
     ensure_resource('file', '/etc/xfs_quota', { 'ensure' => 'directory' })
-    # Save the xfs quota setting to avoid applying at every iteration
     file { "/etc/xfs_quota/${volume_tag}-${volume_name}":
       ensure  => 'file',
       content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
