@@ -71,8 +71,24 @@ define profile::volumes::volume (
   }
 
   if $device != undef {
+    # Always use --force when signatures are detected to avoid interactive prompts
+    exec { "pvcreate-force-${device}":
+      command => "pvcreate --force ${device}",
+      onlyif  => ["test ! -f /tmp/puppet-volume-${name}-pv-created", "wipefs ${device} | grep -q ."],
+      path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+      notify  => Exec["mark-pv-created-${name}"],
+    }
+
+    exec { "mark-pv-created-${name}":
+      command     => "touch /tmp/puppet-volume-${name}-pv-created",
+      path        => ['/bin'],
+      refreshonly => true,
+    }
+
     physical_volume { $device:
-      ensure => present,
+      ensure  => present,
+      force   => true,
+      require => Exec["pvcreate-force-${device}"],
     }
   } else {
     notify { "error_${volume_name}":
@@ -88,6 +104,7 @@ define profile::volumes::volume (
     physical_volumes => $device,
     createonly       => true,
     followsymlinks   => true,
+    force            => true,
   }
 
   if $filesystem == 'xfs' {
