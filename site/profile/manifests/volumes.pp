@@ -104,7 +104,6 @@ define profile::volumes::volume (
     physical_volumes => $device,
     createonly       => true,
     followsymlinks   => true,
-    force            => true,
   }
 
   if $filesystem == 'xfs' {
