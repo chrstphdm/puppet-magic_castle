@@ -49,7 +49,14 @@ define profile::volumes::volume (
   Optional[String[1]] $type = undef,
   Optional[String[1]] $quota = undef,
   Optional[String[1]] $mkfs_options = undef,
+  Optional[String[1]] $volume_id = undef,
 ) {
+  # Automatically determine if volume is preformatted based on volume_id presence
+  $is_preformatted = $volume_id ? {
+    undef   => $preformatted,
+    default => true
+  }
+
   $regex = Regexp(regsubst($glob, /[?*]/, { '?' => '.', '*' => '.*' }))
   $bind_target_ = pick($bind_target, "/${volume_name}")
 
@@ -64,7 +71,7 @@ define profile::volumes::volume (
   $device = (values($::facts['/dev/disk'].filter |$k, $v| { $k =~ $regex }).unique)[0]
   $dev_mapper_id = "/dev/mapper/${volume_tag}--${volume_name}_vg-${volume_tag}--${volume_name}"
 
-  unless $preformatted {
+  unless $is_preformatted {
     exec { "vgchange-${name}_vg":
       command => "vgchange -ay ${name}_vg",
       onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
@@ -123,7 +130,7 @@ define profile::volumes::volume (
   exec { "chown ${owner}:${group} /mnt/${volume_tag}/${volume_name}":
     onlyif      => "test \"$(stat -c%U:%G /mnt/${volume_tag}/${volume_name})\" != \"${owner}:${group}\"",
     refreshonly => true,
-    subscribe   => $preformatted ? {
+    subscribe   => $is_preformatted ? {
       true    => Mount["/mnt/${volume_tag}/${volume_name}"],
       default => Lvm::Logical_volume[$name]
     },
@@ -133,14 +140,14 @@ define profile::volumes::volume (
   exec { "chmod ${mode} /mnt/${volume_tag}/${volume_name}":
     onlyif      => "test \"$(stat -c0%a /mnt/${volume_tag}/${volume_name})\" != \"${mode}\"",
     refreshonly => true,
-    subscribe   => $preformatted ? {
+    subscribe   => $is_preformatted ? {
       true    => Mount["/mnt/${volume_tag}/${volume_name}"],
       default => Lvm::Logical_volume[$name]
     },
     path        => ['/bin'],
   }
 
-  if $enable_resize and !$preformatted {
+  if $enable_resize and !$is_preformatted {
     $logical_volume_size_cmd = "pvs --noheadings -o pv_size ${device} | sed -nr 's/^.*[ <]([0-9]+)\\..*g$/\\1/p'"
     $physical_volume_size_cmd = "pvs --noheadings -o dev_size ${device} | sed -nr 's/^ *([0-9]+)\\..*g/\\1/p'"
     exec { "pvresize ${device}":
@@ -160,7 +167,7 @@ define profile::volumes::volume (
   selinux::fcontext::equivalence { "/mnt/${volume_tag}/${volume_name}":
     ensure  => 'present',
     target  => '/home',
-    require => $preformatted ? {
+    require => $is_preformatted ? {
       true    => Mount["/mnt/${volume_tag}/${volume_name}"],
       default => Mount["/mnt/${volume_tag}/${volume_name}"]
     },
@@ -178,7 +185,7 @@ define profile::volumes::volume (
       options => 'rw,bind',
       require => [
         File[$bind_target_],
-        $preformatted ? {
+        $is_preformatted ? {
           true    => Mount["/mnt/${volume_tag}/${volume_name}"],
           default => Lvm::Logical_volume[$name]
         },
