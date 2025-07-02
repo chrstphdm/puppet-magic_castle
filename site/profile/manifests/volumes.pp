@@ -68,17 +68,35 @@ define profile::volumes::volume (
   $dev_mapper_id = "/dev/mapper/${volume_tag}--${volume_name}_vg-${volume_tag}--${volume_name}"
 
   if $is_existing_volume {
-    # For existing volumes, mount directly without LVM processing
+    # For existing volumes, detect filesystem type automatically
     if $device != undef {
+      # Detect the actual filesystem type
+      exec { "detect-fs-${volume_name}":
+        command => "blkid -s TYPE -o value ${device} > /tmp/puppet-${volume_name}-fstype || echo 'unknown' > /tmp/puppet-${volume_name}-fstype",
+        creates => "/tmp/puppet-${volume_name}-fstype",
+        path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+      }
+
+      $detected_fs = file("/tmp/puppet-${volume_name}-fstype", '/dev/null')
+      $actual_filesystem = $detected_fs ? {
+        ''        => $filesystem,
+        'unknown' => $filesystem,
+        default   => strip($detected_fs)
+      }
+
       mount { "/mnt/${volume_tag}/${volume_name}":
         ensure  => mounted,
         device  => $device,
-        fstype  => $filesystem,
-        options => $filesystem ? {
-          'xfs'  => 'defaults,usrquota',
+        fstype  => $actual_filesystem,
+        options => $actual_filesystem ? {
+          'xfs'   => 'defaults,usrquota',
+          'ext4'  => 'defaults',
           default => 'defaults'
         },
-        require => File["/mnt/${volume_tag}/${volume_name}"],
+        require => [
+          File["/mnt/${volume_tag}/${volume_name}"],
+          Exec["detect-fs-${volume_name}"]
+        ],
       }
       
       $mount_resource = Mount["/mnt/${volume_tag}/${volume_name}"]
@@ -93,9 +111,9 @@ define profile::volumes::volume (
     }
   } else {
     # For new volumes, use LVM as before
-    exec { "vgchange-${name}_vg":
-      command => "vgchange -ay ${name}_vg",
-      onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
+    exec { "vgchange-${volume_name}_vg":
+      command => "vgchange -ay ${volume_name}_vg",
+      onlyif  => ["test ! -d /dev/${volume_name}_vg", "vgscan -t | grep -q '${volume_name}_vg'"],
       require => [Package['lvm2']],
       path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
     }
@@ -113,7 +131,7 @@ define profile::volumes::volume (
       }
     }
 
-    volume_group { "${name}_vg":
+    volume_group { "${volume_name}_vg":
       ensure           => present,
       physical_volumes => $device,
       createonly       => true,
@@ -126,9 +144,9 @@ define profile::volumes::volume (
       $options = 'defaults'
     }
 
-    lvm::logical_volume { $name:
+    lvm::logical_volume { $volume_name:
       ensure            => present,
-      volume_group      => "${name}_vg",
+      volume_group      => "${volume_name}_vg",
       fs_type           => $filesystem,
       mkfs_options      => $mkfs_options,
       mountpath         => "/mnt/${volume_tag}/${volume_name}",
@@ -136,7 +154,7 @@ define profile::volumes::volume (
       options           => $options,
     }
     
-    $mount_resource = Lvm::Logical_volume[$name]
+    $mount_resource = Lvm::Logical_volume[$volume_name]
   }
 
   # Common ownership and permissions management
@@ -163,11 +181,11 @@ define profile::volumes::volume (
     exec { "pvresize ${device}":
       onlyif  => "test `${logical_volume_size_cmd}` -lt `${physical_volume_size_cmd}`",
       path    => ['/usr/bin', '/bin', '/usr/sbin'],
-      require => Lvm::Logical_volume[$name],
+      require => Lvm::Logical_volume[$volume_name],
     }
 
     $pv_freespace_cmd = "pvs --noheading -o pv_free ${device} | sed -nr 's/^ *([0-9]*)\\..*g/\\1/p'"
-    exec { "lvextend -l '+100%FREE' -r /dev/${name}_vg/${name}":
+    exec { "lvextend -l '+100%FREE' -r /dev/${volume_name}_vg/${volume_name}":
       onlyif  => "test `${pv_freespace_cmd}` -gt 0",
       path    => ['/usr/bin', '/bin', '/usr/sbin'],
       require => Exec["pvresize ${device}"],
@@ -218,7 +236,7 @@ define profile::volumes::volume (
       require => File['/etc/xfs_quota'],
     }
 
-    exec { "apply-quota-${name}":
+    exec { "apply-quota-${volume_name}":
       command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
       require     => Mount["/mnt/${volume_tag}/${volume_name}"],
       path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
