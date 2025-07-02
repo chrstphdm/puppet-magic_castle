@@ -202,6 +202,19 @@ define profile::volumes::volume (
 
   if $quota and $filesystem == 'xfs' {
     ensure_resource('file', '/etc/xfs_quota', { 'ensure' => 'directory' })
+    # Save the xfs quota setting to avoid applying at every iteration
     file { "/etc/xfs_quota/${volume_tag}-${volume_name}":
       ensure  => 'file',
-      content => "#FILE TRACKED BY
+      content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
+      require => File['/etc/xfs_quota'],
+    }
+
+    exec { "apply-quota-${name}":
+      command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
+      require     => Mount["/mnt/${volume_tag}/${volume_name}"],
+      path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+      refreshonly => true,
+      subscribe   => [File["/etc/xfs_quota/${volume_tag}-${volume_name}"]],
+    }
+  }
+}
