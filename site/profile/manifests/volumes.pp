@@ -197,7 +197,7 @@ define profile::volumes::volume (
     }
   } elsif (
     $facts['mountpoints'][$bind_target_] != undef and 
-    ($facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id
+    $facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id
   ) {
     mount { $bind_target_:
       ensure  => absent,
