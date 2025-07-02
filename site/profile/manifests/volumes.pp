@@ -89,9 +89,9 @@ define profile::volumes::volume (
       $mount_resource = undef
     }
   } else {
-    exec { "vgchange-${volume_name}_vg":
-      command => "vgchange -ay ${volume_name}_vg",
-      onlyif  => ["test ! -d /dev/${volume_name}_vg", "vgscan -t | grep -q '${volume_name}_vg'"],
+    exec { "vgchange-${name}_vg":
+      command => "vgchange -ay ${name}_vg",
+      onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
       require => [Package['lvm2']],
       path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
     }
@@ -109,7 +109,7 @@ define profile::volumes::volume (
       }
     }
 
-    volume_group { "${volume_name}_vg":
+    volume_group { "${name}_vg":
       ensure           => present,
       physical_volumes => $device,
       createonly       => true,
@@ -196,9 +196,8 @@ define profile::volumes::volume (
       ],
     }
   } elsif (
-    $facts['mountpoints'][$bind_target_] != undef and
-    ($facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id or
-     $facts['mountpoints'][$bind_target_]['device'] == $device)
+    $facts['mountpoints'][$bind_target_] != undef and 
+    ($facts['mountpoints'][$bind_target_]['device'] == $dev_mapper_id
   ) {
     mount { $bind_target_:
       ensure  => absent,
@@ -209,20 +208,6 @@ define profile::volumes::volume (
   if $quota and $filesystem == 'xfs' and $mount_resource != undef {
     ensure_resource('file', '/etc/xfs_quota', { 'ensure' => 'directory' })
     file { "/etc/xfs_quota/${volume_tag}-${volume_name}":
-      ensure  => 'file',
-      content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
-      require => File['/etc/xfs_quota'],
-    }
-
-    exec { "apply-quota-${volume_name}":
-      command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
-      require     => Mount["/mnt/${volume_tag}/${volume_name}"],
-      path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-      refreshonly => true,
-      subscribe   => [File["/etc/xfs_quota/${volume_tag}-${volume_name}"]],
-    }
-  }
-}
       ensure  => 'file',
       content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
       require => File['/etc/xfs_quota'],
