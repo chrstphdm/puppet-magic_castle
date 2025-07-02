@@ -122,9 +122,9 @@ define profile::volumes::volume (
       $options = 'defaults'
     }
 
-    lvm::logical_volume { $volume_name:
+    lvm::logical_volume { $name:
       ensure            => present,
-      volume_group      => "${volume_name}_vg",
+      volume_group      => "${name}_vg",
       fs_type           => $filesystem,
       mkfs_options      => $mkfs_options,
       mountpath         => "/mnt/${volume_tag}/${volume_name}",
@@ -132,7 +132,7 @@ define profile::volumes::volume (
       options           => $options,
     }
     
-    $mount_resource = Lvm::Logical_volume[$volume_name]
+    $mount_resource = Lvm::Logical_volume[$name]
   }
 
   # Common ownership and permissions management
@@ -159,11 +159,11 @@ define profile::volumes::volume (
     exec { "pvresize ${device}":
       onlyif  => "test `${logical_volume_size_cmd}` -lt `${physical_volume_size_cmd}`",
       path    => ['/usr/bin', '/bin', '/usr/sbin'],
-      require => Lvm::Logical_volume[$volume_name],
+      require => $mount_resource,
     }
 
     $pv_freespace_cmd = "pvs --noheading -o pv_free ${device} | sed -nr 's/^ *([0-9]*)\\..*g/\\1/p'"
-    exec { "lvextend -l '+100%FREE' -r /dev/${volume_name}_vg/${volume_name}":
+    exec { "lvextend -l '+100%FREE' -r /dev/${name}_vg/${name}":
       onlyif  => "test `${pv_freespace_cmd}` -gt 0",
       path    => ['/usr/bin', '/bin', '/usr/sbin'],
       require => Exec["pvresize ${device}"],
@@ -213,7 +213,7 @@ define profile::volumes::volume (
       require => File['/etc/xfs_quota'],
     }
 
-    exec { "apply-quota-${volume_name}":
+    exec { "apply-quota-${name}":
       command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
       require     => Mount["/mnt/${volume_tag}/${volume_name}"],
       path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
