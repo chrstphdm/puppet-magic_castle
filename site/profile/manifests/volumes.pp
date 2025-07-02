@@ -43,6 +43,7 @@ define profile::volumes::volume (
   String[1] $seltype = 'home_root_t',
   Boolean $bind_mount = true,
   Boolean $enable_resize = false,
+  Boolean $preformatted = false,
   Enum['xfs', 'ext4'] $filesystem = 'xfs',
   Optional[String[1]] $bind_target = undef,
   Optional[String[1]] $type = undef,
@@ -63,80 +64,83 @@ define profile::volumes::volume (
   $device = (values($::facts['/dev/disk'].filter |$k, $v| { $k =~ $regex }).unique)[0]
   $dev_mapper_id = "/dev/mapper/${volume_tag}--${volume_name}_vg-${volume_tag}--${volume_name}"
 
-  exec { "vgchange-${name}_vg":
-    command => "vgchange -ay ${name}_vg",
-    onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
-    require => [Package['lvm2']],
-    path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-  }
-
-  if $device != undef {
-    # Always use --force when signatures are detected to avoid interactive prompts
-    exec { "pvcreate-force-${device}":
-      command => "pvcreate --force ${device}",
-      onlyif  => ["test ! -f /tmp/puppet-volume-${name}-pv-created", "wipefs ${device} | grep -q ."],
+  unless $preformatted {
+    exec { "vgchange-${name}_vg":
+      command => "vgchange -ay ${name}_vg",
+      onlyif  => ["test ! -d /dev/${name}_vg", "vgscan -t | grep -q '${name}_vg'"],
+      require => [Package['lvm2']],
       path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-      notify  => Exec["mark-pv-created-${name}"],
     }
 
-    exec { "mark-pv-created-${name}":
-      command     => "touch /tmp/puppet-volume-${name}-pv-created",
-      path        => ['/bin'],
-      refreshonly => true,
+    if $device != undef {
+      physical_volume { $device:
+        ensure => present,
+      }
+    } else {
+      notify { "error_${volume_name}":
+        message => @("EOT")
+          WARNING: Could not find device ${glob} associated with ${volume_tag}-${volume_name}.
+          This will cause errors with resources related to ${volume_tag}-${volume_name}.
+          | EOT
+      }
     }
 
-    physical_volume { $device:
-      ensure  => present,
-      force   => true,
-      require => Exec["pvcreate-force-${device}"],
+    volume_group { "${name}_vg":
+      ensure           => present,
+      physical_volumes => $device,
+      createonly       => true,
+      followsymlinks   => true,
+    }
+
+    if $filesystem == 'xfs' {
+      $options = 'defaults,usrquota'
+    } else {
+      $options = 'defaults'
+    }
+
+    lvm::logical_volume { $name:
+      ensure            => present,
+      volume_group      => "${name}_vg",
+      fs_type           => $filesystem,
+      mkfs_options      => $mkfs_options,
+      mountpath         => "/mnt/${volume_tag}/${volume_name}",
+      mountpath_require => true,
+      options           => $options,
     }
   } else {
-    notify { "error_${volume_name}":
-      message => @("EOT")
-        WARNING: Could not find device ${glob} associated with ${volume_tag}-${volume_name}.
-        This will cause errors with resources related to ${volume_tag}-${volume_name}.
-        | EOT
+    mount { "/mnt/${volume_tag}/${volume_name}":
+      ensure  => mounted,
+      device  => $dev_mapper_id,
+      fstype  => $filesystem,
+      options => $filesystem ? {
+        'xfs'  => 'defaults,usrquota',
+        default => 'defaults'
+      },
+      require => File["/mnt/${volume_tag}/${volume_name}"],
     }
-  }
-
-  volume_group { "${name}_vg":
-    ensure           => present,
-    physical_volumes => $device,
-    createonly       => true,
-    followsymlinks   => true,
-  }
-
-  if $filesystem == 'xfs' {
-    $options = 'defaults,usrquota'
-  } else {
-    $options = 'defaults'
-  }
-
-  lvm::logical_volume { $name:
-    ensure            => present,
-    volume_group      => "${name}_vg",
-    fs_type           => $filesystem,
-    mkfs_options      => $mkfs_options,
-    mountpath         => "/mnt/${volume_tag}/${volume_name}",
-    mountpath_require => true,
-    options           => $options,
   }
 
   exec { "chown ${owner}:${group} /mnt/${volume_tag}/${volume_name}":
     onlyif      => "test \"$(stat -c%U:%G /mnt/${volume_tag}/${volume_name})\" != \"${owner}:${group}\"",
     refreshonly => true,
-    subscribe   => Lvm::Logical_volume[$name],
+    subscribe   => $preformatted ? {
+      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
+      default => Lvm::Logical_volume[$name]
+    },
     path        => ['/bin'],
   }
 
   exec { "chmod ${mode} /mnt/${volume_tag}/${volume_name}":
     onlyif      => "test \"$(stat -c0%a /mnt/${volume_tag}/${volume_name})\" != \"${mode}\"",
     refreshonly => true,
-    subscribe   => Lvm::Logical_volume[$name],
+    subscribe   => $preformatted ? {
+      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
+      default => Lvm::Logical_volume[$name]
+    },
     path        => ['/bin'],
   }
 
-  if $enable_resize {
+  if $enable_resize and !$preformatted {
     $logical_volume_size_cmd = "pvs --noheadings -o pv_size ${device} | sed -nr 's/^.*[ <]([0-9]+)\\..*g$/\\1/p'"
     $physical_volume_size_cmd = "pvs --noheadings -o dev_size ${device} | sed -nr 's/^ *([0-9]+)\\..*g/\\1/p'"
     exec { "pvresize ${device}":
@@ -156,7 +160,10 @@ define profile::volumes::volume (
   selinux::fcontext::equivalence { "/mnt/${volume_tag}/${volume_name}":
     ensure  => 'present',
     target  => '/home',
-    require => Mount["/mnt/${volume_tag}/${volume_name}"],
+    require => $preformatted ? {
+      true    => Mount["/mnt/${volume_tag}/${volume_name}"],
+      default => Mount["/mnt/${volume_tag}/${volume_name}"]
+    },
     notify  => Selinux::Exec_restorecon["/mnt/${volume_tag}/${volume_name}"],
   }
 
@@ -171,7 +178,10 @@ define profile::volumes::volume (
       options => 'rw,bind',
       require => [
         File[$bind_target_],
-        Lvm::Logical_volume[$name],
+        $preformatted ? {
+          true    => Mount["/mnt/${volume_tag}/${volume_name}"],
+          default => Lvm::Logical_volume[$name]
+        },
       ],
     }
   } elsif (
@@ -185,19 +195,6 @@ define profile::volumes::volume (
 
   if $quota and $filesystem == 'xfs' {
     ensure_resource('file', '/etc/xfs_quota', { 'ensure' => 'directory' })
-    # Save the xfs quota setting to avoid applying at every iteration
     file { "/etc/xfs_quota/${volume_tag}-${volume_name}":
       ensure  => 'file',
-      content => "#FILE TRACKED BY PUPPET DO NOT EDIT MANUALLY\n${quota}",
-      require => File['/etc/xfs_quota'],
-    }
-
-    exec { "apply-quota-${name}":
-      command     => "xfs_quota -x -c 'limit bsoft=${quota} bhard=${quota} -d' /mnt/${volume_tag}/${volume_name}",
-      require     => Mount["/mnt/${volume_tag}/${volume_name}"],
-      path        => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-      refreshonly => true,
-      subscribe   => [File["/etc/xfs_quota/${volume_tag}-${volume_name}"]],
-    }
-  }
-}
+      content => "#FILE TRACKED BY
