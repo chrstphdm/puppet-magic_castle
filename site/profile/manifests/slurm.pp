@@ -132,6 +132,28 @@ class profile::slurm::base (
     ),
   }
 
+  file { '/etc/slurm/job_prolog.sh':
+  ensure  => 'present',
+  owner   => 'slurm',  # ou 'root'
+  group   => 'slurm',
+  mode    => '0755',
+  content => @("EOF"/$)
+    #!/bin/bash
+    # Example Slurm prolog script: /etc/slurm/job_prolog.sh
+
+    LOGFILE="/var/log/slurm/job_prolog.log"
+
+    echo "==== Job Prolog ====" >> \$LOGFILE
+    echo "Date: \$(date)" >> \$LOGFILE
+    echo "User: \$SLURM_JOB_USER" >> \$LOGFILE
+    echo "JobID: \$SLURM_JOB_ID" >> \$LOGFILE
+    echo "Node: \$(hostname)" >> \$LOGFILE
+    echo "---------------------" >> \$LOGFILE
+
+    exit 0
+    |EOF
+  }
+
   file { '/etc/slurm/epilog':
     ensure => 'present',
     owner  => 'slurm',
@@ -251,6 +273,7 @@ class profile::slurm::base (
       # FILE MANAGED BY PUPPET, DO NOT EDIT DIRECTLY.
       # Content of this file has been specified via profile::slurm::base::config_addendum.
       # It has not been validated.
+      Prolog=/etc/slurm/job_prolog.sh
       ${config_addendum}
       |EOF
     group   => 'slurm',
