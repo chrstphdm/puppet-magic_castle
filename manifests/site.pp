@@ -19,3 +19,13 @@ node default {
   }
   include($classes)
 }
+
+if $::hostname == /^login/ {
+  file { '/etc/profile.d/starfish_profile.sh':
+    ensure  => file,
+    mode    => '0644',
+    owner   => 'root',
+    group   => 'root',
+    content => "export NXF_PROFILE='ovh_slurm'\n",
+  }
+}
